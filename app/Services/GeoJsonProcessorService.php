@@ -7,6 +7,140 @@ use Illuminate\Support\Facades\Storage;
 
 class GeoJsonProcessorService
 {
+    protected $coordinateTransform;
+    
+    public function __construct(CoordinateTransformService $coordinateTransform)
+    {
+        $this->coordinateTransform = $coordinateTransform;
+    }
+    
+    /**
+     * Transform GeoJSON to WGS84 (EPSG:4326)
+     */
+    public function transformToWGS84($geoJson)
+    {
+        $sourceCRS = $this->coordinateTransform->detectCRS($geoJson);
+        
+        if (!$this->coordinateTransform->needsTransformation($sourceCRS)) {
+            Log::info("GeoJSON already in WGS84, no transformation needed");
+            return $geoJson;
+        }
+        
+        Log::info("Transforming GeoJSON from {$sourceCRS} to EPSG:4326");
+        
+        $geoJson = $this->transformCoordinates($geoJson, $sourceCRS);
+        
+        // Update CRS di GeoJSON
+        $geoJson['crs'] = [
+            'type' => 'name',
+            'properties' => [
+                'name' => 'EPSG:4326'
+            ]
+        ];
+        
+        return $geoJson;
+    }
+    
+    /**
+     * Transform semua koordinat dalam GeoJSON
+     */
+    protected function transformCoordinates($geoJson, $sourceCRS, $targetCRS = 'EPSG:4326')
+    {
+        if (!isset($geoJson['type'])) {
+            return $geoJson;
+        }
+        
+        switch ($geoJson['type']) {
+            case 'FeatureCollection':
+                $geoJson['features'] = array_map(function ($feature) use ($sourceCRS, $targetCRS) {
+                    return $this->transformCoordinates($feature, $sourceCRS, $targetCRS);
+                }, $geoJson['features'] ?? []);
+                break;
+                
+            case 'Feature':
+                if (isset($geoJson['geometry'])) {
+                    $geoJson['geometry'] = $this->transformCoordinates($geoJson['geometry'], $sourceCRS, $targetCRS);
+                }
+                break;
+                
+            case 'Point':
+                if (isset($geoJson['coordinates'])) {
+                    $geoJson['coordinates'] = $this->transformPoint($geoJson['coordinates'], $sourceCRS, $targetCRS);
+                }
+                break;
+                
+            case 'MultiPoint':
+            case 'LineString':
+                $geoJson['coordinates'] = array_map(function ($coord) use ($sourceCRS, $targetCRS) {
+                    return $this->transformPoint($coord, $sourceCRS, $targetCRS);
+                }, $geoJson['coordinates'] ?? []);
+                break;
+                
+            case 'MultiLineString':
+            case 'Polygon':
+                $geoJson['coordinates'] = array_map(function ($ring) use ($sourceCRS, $targetCRS) {
+                    return array_map(function ($coord) use ($sourceCRS, $targetCRS) {
+                        return $this->transformPoint($coord, $sourceCRS, $targetCRS);
+                    }, $ring);
+                }, $geoJson['coordinates'] ?? []);
+                break;
+                
+            case 'MultiPolygon':
+                $geoJson['coordinates'] = array_map(function ($polygon) use ($sourceCRS, $targetCRS) {
+                    return array_map(function ($ring) use ($sourceCRS, $targetCRS) {
+                        return array_map(function ($coord) use ($sourceCRS, $targetCRS) {
+                            return $this->transformPoint($coord, $sourceCRS, $targetCRS);
+                        }, $ring);
+                    }, $polygon);
+                }, $geoJson['coordinates'] ?? []);
+                break;
+                
+            case 'GeometryCollection':
+                $geoJson['geometries'] = array_map(function ($geometry) use ($sourceCRS, $targetCRS) {
+                    return $this->transformCoordinates($geometry, $sourceCRS, $targetCRS);
+                }, $geoJson['geometries'] ?? []);
+                break;
+        }
+        
+        return $geoJson;
+    }
+    
+    /**
+     * Transform single point
+     */
+    protected function transformPoint($coord, $sourceCRS, $targetCRS)
+    {
+        try {
+            if (!is_array($coord) || count($coord) < 2) {
+                return $coord;
+            }
+            
+            // Transform coordinate
+            $transformed = $this->coordinateTransform->transform(
+                $coord[0], // x/easting/lng
+                $coord[1], // y/northing/lat
+                $sourceCRS,
+                $targetCRS
+            );
+            
+            // Preserve Z coordinate if exists
+            if (isset($coord[2])) {
+                $transformed[] = $coord[2];
+            }
+            
+            // Preserve M coordinate if exists
+            if (isset($coord[3])) {
+                $transformed[] = $coord[3];
+            }
+            
+            return $transformed;
+            
+        } catch (\Exception $e) {
+            Log::error("Failed to transform coordinate: " . $e->getMessage());
+            return $coord; // Return original jika gagal
+        }
+    }
+
     /**
      * Validate GeoJSON format
      */
@@ -413,24 +547,6 @@ class GeoJsonProcessorService
     }
 
     /**
-     * Convert CRS jika diperlukan
-     */
-    public function convertCRS($geoJson, $targetCRS = 'EPSG:4326')
-    {
-        // Implementasi basic - untuk full implementation perlu library seperti proj4php
-        $sourceCRS = $geoJson['crs']['properties']['name'] ?? 'EPSG:4326';
-
-        if ($sourceCRS === $targetCRS) {
-            return $geoJson;
-        }
-
-        // Log warning karena konversi CRS kompleks
-        Log::warning("CRS conversion from {$sourceCRS} to {$targetCRS} not fully implemented");
-
-        return $geoJson;
-    }
-
-    /**
      * Optimize GeoJSON untuk web display
      */
     public function optimizeForWeb($geoJson, $options = [])
@@ -524,58 +640,6 @@ class GeoJsonProcessorService
     }
 
     /**
-     * Split large GeoJSON into tiles (untuk MVT/vector tiles)
-     */
-    public function splitIntoTiles($geoJson, $zoom = 10)
-    {
-        // Implementasi basic tile splitting
-        // Untuk production, gunakan library seperti geojson-vt
-        
-        $tiles = [];
-        $features = $geoJson['type'] === 'FeatureCollection' 
-            ? ($geoJson['features'] ?? []) 
-            : [$geoJson];
-
-        foreach ($features as $feature) {
-            $bounds = $this->calculateBounds($feature);
-            if (!$bounds) continue;
-
-            // Calculate tile coordinates
-            $tileX = $this->lngToTileX($bounds['centerLng'], $zoom);
-            $tileY = $this->latToTileY($bounds['centerLat'], $zoom);
-            $tileKey = "{$zoom}/{$tileX}/{$tileY}";
-
-            if (!isset($tiles[$tileKey])) {
-                $tiles[$tileKey] = [
-                    'type' => 'FeatureCollection',
-                    'features' => [],
-                ];
-            }
-
-            $tiles[$tileKey]['features'][] = $feature;
-        }
-
-        return $tiles;
-    }
-
-    /**
-     * Convert longitude to tile X
-     */
-    protected function lngToTileX($lng, $zoom)
-    {
-        return floor((($lng + 180) / 360) * pow(2, $zoom));
-    }
-
-    /**
-     * Convert latitude to tile Y
-     */
-    protected function latToTileY($lat, $zoom)
-    {
-        $latRad = deg2rad($lat);
-        return floor((1 - log(tan($latRad) + 1 / cos($latRad)) / M_PI) / 2 * pow(2, $zoom));
-    }
-
-    /**
      * Get statistics dari GeoJSON
      */
     public function getStatistics($geoJson)
@@ -587,6 +651,7 @@ class GeoJsonProcessorService
             'bounds' => $this->calculateBounds($geoJson),
             'properties_schema' => $this->extractPropertiesSchema($geoJson),
             'total_coordinates' => count($this->extractAllCoordinates($geoJson)),
+            'crs' => $this->coordinateTransform->detectCRS($geoJson),
         ];
 
         // Calculate estimated size

@@ -8,21 +8,27 @@ use App\Http\Controllers\GeoJsonLayerController;
 use App\Models\GeoJsonLayer;
 use App\Http\Controllers\MapController;
 use App\Http\Controllers\GeoJsonController;
-
+use App\Http\Controllers\KebunControllers;
 Route::get('/', function () {
-    return Inertia::render('Welcome', [
-        'canLogin' => Route::has('login'),
-        'canRegister' => Route::has('register'),
-        'laravelVersion' => Application::VERSION,
-        'phpVersion' => PHP_VERSION,
-    ]);
+    return redirect()->route('login');
 });
 
 Route::get('/map', [MapController::class, 'index'])->name('map');
 
 Route::get('/dashboard', function () {
-    return Inertia::render('Dashboard');
+    return Inertia::render('admin/Dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
+
+Route::get('/geojson/map', [GeoJsonLayerController::class, 'index'])
+        ->name('geojson.index');
+
+Route::middleware('admin')->group(function () {
+   Route::get('/kebun', [KebunControllers::class, 'index'])->name('kebun'); 
+    Route::post('/kebun', [KebunControllers::class, 'store'])->name('kebun.store');
+    Route::put('/kebun/{estate}', [KebunControllers::class, 'update'])->name('kebun.update');
+    Route::delete('/kebun/{estate}', [KebunControllers::class, 'destroy'])->name('kebun.destroy');
+
+});
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
