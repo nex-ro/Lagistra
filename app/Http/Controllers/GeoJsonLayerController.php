@@ -7,7 +7,7 @@ use App\Services\GeoJsonProcessorService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
-
+use App\Models\Estate;  
 class GeoJsonLayerController extends Controller
 {
     protected $processor;
@@ -20,11 +20,27 @@ class GeoJsonLayerController extends Controller
     /**
      * Halaman utama upload GeoJSON
      */
-    public function index()
+       public function index(Request $request)
     {
-        $layers = GeoJsonLayer::with('user')
-            ->where('user_id', auth()->id())
-            ->orderedByZIndex()
+        $query = GeoJsonLayer::with(['user', 'estate'])
+            ->where('user_id', auth()->id());
+
+        // Filter berdasarkan estate
+        if ($request->filled('estate_id')) {
+            $query->where('estate_id', $request->estate_id);
+        }
+
+        // Search
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('description', 'like', "%{$search}%")
+                  ->orWhere('file_name', 'like', "%{$search}%");
+            });
+        }
+
+        $layers = $query->orderedByZIndex()
             ->latest()
             ->get()
             ->map(function ($layer) {
@@ -32,6 +48,11 @@ class GeoJsonLayerController extends Controller
                     'id' => $layer->id,
                     'name' => $layer->name,
                     'description' => $layer->description,
+                    'estate' => $layer->estate ? [
+                        'id' => $layer->estate->id,
+                        'nama_estate' => $layer->estate->nama_estate,
+                        'nama_pt' => $layer->estate->nama_pt,
+                    ] : null,
                     'file_name' => $layer->file_name,
                     'file_size' => $layer->file_size_human,
                     'geometry_type' => $layer->geometry_type,
@@ -47,8 +68,75 @@ class GeoJsonLayerController extends Controller
                 ];
             });
 
+        // Get all estates untuk dropdown
+        $estates = Estate::orderBy('nama_estate')->get()->map(function ($estate) {
+            return [
+                'id' => $estate->id,
+                'nama_estate' => $estate->nama_estate,
+                'nama_pt' => $estate->nama_pt,
+                'label' => $estate->nama_estate . ' - ' . $estate->nama_pt, // Untuk display di dropdown
+            ];
+        });
+
         return Inertia::render('GeoJson/Index', [
             'layers' => $layers,
+            'estates' => $estates,
+            'filters' => $request->only(['search', 'estate_id'])
+        ]);
+    }
+
+        public function getVisibleLayers()
+    {
+        $layers = GeoJsonLayer::with('estate')
+            ->where('is_visible', true)
+            ->where('status', 'ready')
+            ->get()
+            ->map(function ($layer) {
+                return [
+                    'id' => $layer->id,
+                    'name' => $layer->name,
+                    'color' => $layer->color,
+                    'opacity' => $layer->opacity,
+                    'geojson_data' => json_decode($layer->geojson_data),
+                    'estate' => $layer->estate ? [
+                        'id' => $layer->estate->id,
+                        'nama_estate' => $layer->estate->nama_estate,
+                        'nama_pt' => $layer->estate->nama_pt,
+                    ] : null,
+                ];
+            });
+
+        return response()->json($layers);
+    }
+
+    /**
+     * Get single GeoJSON layer data
+     */
+    public function getLayer($id)
+    {
+        $layer = GeoJsonLayer::with('estate')->findOrFail($id);
+
+        if ($layer->status !== 'ready') {
+            return response()->json([
+                'error' => 'Layer not ready'
+            ], 400);
+        }
+
+        return response()->json([
+            'id' => $layer->id,
+            'name' => $layer->name,
+            'description' => $layer->description,
+            'color' => $layer->color,
+            'opacity' => $layer->opacity,
+            'geojson_data' => json_decode($layer->geojson_data),
+            'features_count' => $layer->features_count,
+            'geometry_type' => $layer->geometry_type,
+            'is_visible' => $layer->is_visible,
+            'estate' => $layer->estate ? [
+                'id' => $layer->estate->id,
+                'nama_estate' => $layer->estate->nama_estate,
+                'nama_pt' => $layer->estate->nama_pt,
+            ] : null,
         ]);
     }
 
@@ -71,6 +159,7 @@ public function upload(Request $request)
         'name' => 'nullable|string|max:255',
         'description' => 'nullable|string|max:1000',
         'color' => 'nullable|string|regex:/^#[0-9A-Fa-f]{6}$/',
+        'estate_id' => 'required|exists:estates,id',
         'opacity' => 'nullable|integer|min:0|max:100',
     ]);
 
@@ -130,6 +219,7 @@ public function upload(Request $request)
             'file_name' => $file->getClientOriginalName(),
             'file_hash' => $fileHash,
             'file_size' => $file->getSize(),
+            'estate_id' => $request->estate_id,
             'color' => $request->color ?? '#3388ff',
             'opacity' => $request->opacity ?? 70,
             'user_id' => auth()->id(),
@@ -215,6 +305,7 @@ public function upload(Request $request)
             'opacity' => 'nullable|integer|min:0|max:100',
             'stroke_color' => 'nullable|string|regex:/^#[0-9A-Fa-f]{6}$/',
             'stroke_width' => 'nullable|integer|min:1|max:10',
+             'estate_id' => 'nullable|exists:estates,id',
             'is_visible' => 'nullable|boolean',
             'z_index' => 'nullable|integer',
         ]);
@@ -225,6 +316,7 @@ public function upload(Request $request)
             'color',
             'opacity',
             'stroke_color',
+            'estate_id',
             'stroke_width',
             'is_visible',
             'z_index',

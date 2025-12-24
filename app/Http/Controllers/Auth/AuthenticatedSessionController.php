@@ -33,7 +33,7 @@ class AuthenticatedSessionController extends Controller
         if ($user->role === 'admin') {
             return redirect()->intended(route('geojson.index', absolute: false));
         }
-        return redirect()->intended(route('map', absolute: false));
+        return redirect()->intended(route('dashboard', absolute: false));
     }
     /**
      * Destroy an authenticated session.

@@ -19,9 +19,6 @@ Route::get('/dashboard', function () {
     return Inertia::render('admin/Dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
 
-Route::get('/geojson/map', [GeoJsonLayerController::class, 'index'])
-        ->name('geojson.index');
-
 Route::middleware('admin')->group(function () {
    Route::get('/kebun', [KebunControllers::class, 'index'])->name('kebun'); 
     Route::post('/kebun', [KebunControllers::class, 'store'])->name('kebun.store');
@@ -36,9 +33,12 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
     // GeoJSON Routes - dengan prefix konsisten
-    Route::get('/geojson/map', [GeoJsonLayerController::class, 'index'])
+    Route::get('/citra', [GeoJsonLayerController::class, 'index'])
         ->name('geojson.index');
     
+            Route::get('/geojson/visible', [GeoJsonApiController::class, 'getVisibleLayers']);
+    Route::get('/geojson/{id}', [GeoJsonApiController::class, 'getLayer']);
+
     Route::post('/geojson/upload', [GeoJsonLayerController::class, 'upload'])
         ->name('geojson.upload');
     
@@ -51,7 +51,7 @@ Route::middleware('auth')->group(function () {
     Route::put('/geojson/{id}', [GeoJsonLayerController::class, 'update'])
         ->name('geojson.update');
     
-    Route::post('/geojson/{id}/toggle-visibility', [GeoJsonLayerController::class, 'toggleVisibility'])
+    Route::post('/geojson/{id}/toggle-visibility', [GeoJsonLayerController::class, 'geojson.toggle'])
         ->name('geojson.toggle-visibility');
     
     Route::get('/geojson/{id}/download', [GeoJsonLayerController::class, 'download'])

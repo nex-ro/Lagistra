@@ -14,6 +14,7 @@ class GeoJsonLayer extends Model
     protected $fillable = [
         'name',
         'description',
+        'estate_id',
         'file_path',
         'file_name',
         'file_hash',
@@ -75,6 +76,11 @@ class GeoJsonLayer extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function estate()
+{
+    return $this->belongsTo(Estate::class);
+}
+  
     public function features()
     {
         return $this->hasMany(GeoJsonFeature::class, 'layer_id');
@@ -213,4 +219,5 @@ class GeoJsonLayer extends Model
             $layer->deleteFile();
         });
     }
+    
 }

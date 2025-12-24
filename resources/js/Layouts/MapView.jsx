@@ -7,7 +7,8 @@ import axios from "axios";
 
 export default function MapView({ initialLayers = [] }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [selectedMap, setSelectedMap] = useState("osm");
+  const [selectedMap, setSelectedMap] = useState("esri");
+  
   const [showMapSelector, setShowMapSelector] = useState(false);
   const [showLayerPanel, setShowLayerPanel] = useState(true);
   const [layers, setLayers] = useState(initialLayers);
@@ -17,7 +18,8 @@ export default function MapView({ initialLayers = [] }) {
   const [mapZoom, setMapZoom] = useState(10);
   const [selectedLayerId, setSelectedLayerId] = useState(null);
   const mapRef = useRef(null);
-
+const [hoveredLayerId, setHoveredLayerId] = useState(null);
+const [selectedFeature, setSelectedFeature] = useState(null);
   const mapOptions = [
     {
       id: "osm",
@@ -144,24 +146,71 @@ export default function MapView({ initialLayers = [] }) {
     }
   };
 
-  const getLayerStyle = (layer) => {
-    return {
-      color: layer.stroke_color || layer.color,
-      weight: layer.stroke_width || 2,
-      opacity: (layer.opacity || 70) / 100,
-      fillColor: layer.color,
-      fillOpacity: (layer.opacity || 70) / 100 * 0.5
-    };
+  const getLayerStyle = (layer, isSelected = false, isHovered = false) => {
+  const baseStyle = {
+    color: layer.stroke_color || layer.color,
+    weight: layer.stroke_width || 2,
+    opacity: (layer.opacity || 70) / 100,
+    fillColor: layer.color,
+    fillOpacity: (layer.opacity || 70) / 100 * 0.5
   };
 
-  const onEachFeature = (feature, layer) => {
-    if (feature.properties) {
-      const popupContent = Object.entries(feature.properties)
-        .map(([key, value]) => `<strong>${key}:</strong> ${value}`)
-        .join('<br/>');
-      layer.bindPopup(popupContent);
-    }
-  };
+  if (isSelected) {
+    return {
+      ...baseStyle,
+      color: '#3b82f6',
+      weight: 4,
+      fillColor: '#60a5fa',
+      fillOpacity: 0.6
+    };
+  }
+
+  if (isHovered) {
+    return {
+      ...baseStyle,
+      weight: 3,
+      fillOpacity: (layer.opacity || 70) / 100 * 0.7
+    };
+  }
+
+  return baseStyle;
+};
+
+  const onEachFeature = (layerData) => (feature, leafletLayer) => {
+  if (feature.properties) {
+    const popupContent = Object.entries(feature.properties)
+      .map(([key, value]) => `<strong>${key}:</strong> ${value}`)
+      .join('<br/>');
+    leafletLayer.bindPopup(popupContent);
+
+    // Store original style
+    const originalStyle = getLayerStyle(layerData);
+    
+    // Add click event
+    leafletLayer.on('click', () => {
+      setSelectedFeature(feature.properties);
+    });
+
+    // Add hover events with color change
+    leafletLayer.on('mouseover', (e) => {
+      e.target.setStyle({
+        color: '#f59e0b', // Orange color on hover
+        weight: 4,
+        fillColor: '#fbbf24', // Light orange fill
+        fillOpacity: 0.7
+      });
+      if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
+        e.target.bringToFront();
+      }
+    });
+
+    leafletLayer.on('mouseout', (e) => {
+      // Reset to original style
+      e.target.setStyle(originalStyle);
+    });
+  }
+};
+
 
   // Map controller component
   function MapController() {
@@ -212,21 +261,30 @@ export default function MapView({ initialLayers = [] }) {
           </button>
           {showMapSelector && (
             <div className="absolute top-full mt-2 right-0 bg-white rounded-lg shadow-xl border border-gray-200 min-w-[200px] overflow-hidden">
-              {mapOptions.map((map) => (
-                <button
-                  key={map.id}
-                  onClick={() => {
-                    setSelectedMap(map.id);
-                    setShowMapSelector(false);
-                  }}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 transition-colors ${
-                    selectedMap === map.id ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-700'
-                  }`}
-                >
-                  {map.name}
-                  {selectedMap === map.id && <span className="float-right">✓</span>}
-                </button>
-              ))}
+             {mapOptions.map((map) => (
+              <button
+                key={map.id}
+                onClick={() => {
+                  setSelectedMap(map.id);
+                  setShowMapSelector(false);
+                }}
+                className={`w-full text-left px-4 py-3 transition-all duration-200 ${
+                  selectedMap === map.id 
+                    ? 'bg-blue-500 text-white font-semibold shadow-inner' 
+                    : 'text-gray-700 hover:bg-blue-50 hover:text-blue-600'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span>{map.name}</span>
+                  {selectedMap === map.id && (
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                </div>
+              </button>
+            ))}
+
             </div>
           )}
         </div>
@@ -262,11 +320,18 @@ export default function MapView({ initialLayers = [] }) {
             ) : (
               layers.map((layer) => (
                 <div
-                  key={layer.id}
-                  className={`p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                    selectedLayerId === layer.id ? 'bg-blue-50' : ''
-                  }`}
-                >
+                    key={layer.id}
+                    className={`p-3 border-b border-gray-100 transition-all duration-200 cursor-pointer ${
+                      selectedLayerId === layer.id 
+                        ? 'bg-blue-100 border-l-4 border-l-blue-500' 
+                        : hoveredLayerId === layer.id
+                        ? 'bg-gray-100'
+                        : 'hover:bg-gray-50'
+                    }`}
+                    onMouseEnter={() => setHoveredLayerId(layer.id)}
+                    onMouseLeave={() => setHoveredLayerId(null)}
+                  >
+
                   <div className="flex items-start gap-3">
                     <button
                       onClick={() => toggleLayerVisibility(layer.id)}
@@ -328,6 +393,33 @@ export default function MapView({ initialLayers = [] }) {
           </div>
         </div>
       )}
+      {/* Selected Feature Card */}
+{selectedFeature && (
+  <div className="absolute bottom-4 right-4 z-[1000] bg-white rounded-lg shadow-xl border border-gray-200 w-96 max-h-[70vh] overflow-hidden flex flex-col">
+    {/* Header dengan tombol close */}
+    <div className="p-4 border-b border-gray-200 bg-gradient-to-r from-blue-500 to-blue-600 text-white flex items-center justify-between">
+      <h3 className="font-semibold flex items-center gap-2">
+        <MapPin className="w-5 h-5" />
+        Detail Atribut
+      </h3>
+      <button onClick={() => setSelectedFeature(null)}>
+        {/* Close icon */}
+      </button>
+    </div>
+    
+    {/* Body dengan semua atribut yang diorganisir dalam sections */}
+    <div className="overflow-y-auto flex-1 p-4">
+      {/* Primary Info: BLOK */}
+      {/* Key Info Grid: DIVISI, LUAS_HA, YOP, JML_POKOK */}
+      {/* Company Info: NAMA_PT, ESTATE, KOPERASI */}
+      {/* Production Info: TM, TBM, SPH_NET */}
+      {/* Area Details: AREAL_PROD, AREAL_KOSO, dll */}
+      {/* Infrastructure: JALAN, PARIT, TANGGUL */}
+      {/* Environmental: HCV, HUTAN, SUNGAI, POND */}
+      {/* Other Info: JENIS_BIBI, KET, AREA, dll */}
+    </div>
+  </div>
+)}
 
       {/* Map */}
       <MapContainer
@@ -346,19 +438,19 @@ export default function MapView({ initialLayers = [] }) {
         />
 
         {/* Render GeoJSON Layers */}
-        {layers.map((layer) => {
-          if (layer.is_visible && geojsonData[layer.id]) {
-            return (
-              <GeoJSON
-                key={layer.id}
-                data={geojsonData[layer.id]}
-                style={getLayerStyle(layer)}
-                onEachFeature={onEachFeature}
-              />
-            );
-          }
-          return null;
-        })}
+{layers.map((layer) => {
+  if (layer.is_visible && geojsonData[layer.id]) {
+    return (
+      <GeoJSON
+        key={`${layer.id}-${layer.color}-${layer.opacity}`}
+        data={geojsonData[layer.id]}
+        style={getLayerStyle(layer)}
+        onEachFeature={onEachFeature(layer)}
+      />
+    );
+  }
+  return null;
+})}
       </MapContainer>
     </div>
   );
