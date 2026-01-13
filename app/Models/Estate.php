@@ -25,10 +25,39 @@ class Estate extends Model
         'luas_area' => 'decimal:2',
     ];
 
-    
+    /**
+     * Relasi ke GeoJsonLayer
+     */
     public function geoJsonLayers()
     {
         return $this->hasMany(GeoJsonLayer::class);
+    }
+
+    /**
+     * Relasi ke DataPerkebunan
+     */
+    public function dataPerkebunan()
+    {
+        return $this->hasMany(DataPerkebunan::class);
+    }
+
+    /**
+     * Get data perkebunan untuk tahun tertentu
+     */
+    public function dataPerkebunanByTahun(int $tahun)
+    {
+        return $this->dataPerkebunan()->where('tahun', $tahun);
+    }
+
+    /**
+     * Get data perkebunan untuk periode tertentu
+     */
+    public function dataPerkebunanByPeriode(int $tahun, string $bulan)
+    {
+        return $this->dataPerkebunan()
+            ->where('tahun', $tahun)
+            ->where('bulan', $bulan)
+            ->first();
     }
 
     /**

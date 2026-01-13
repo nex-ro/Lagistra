@@ -1,5 +1,5 @@
     import { useState, useEffect } from 'react';
-    import { ChevronLeft, ChevronRight, Map, Layers, Database, Settings, BarChart3, FileText, User, LogOut, Loader2 } from 'lucide-react';
+    import { ChevronLeft, ChevronRight, Map, Layers, Database, Settings, BarChart3, FileText, User, LogOut, Loader2, PersonStanding, Palmtree } from 'lucide-react';
     import { Link, usePage, router } from '@inertiajs/react';
 
     export default function Sidebar({ isOpen, onToggle }) {
@@ -10,11 +10,13 @@
 
         const menuItems = [
             { name: 'Dashboard', icon: Map, href: '/dashboard', color: 'emerald' },
-            { name: 'Kebun', icon: Layers, href: '/kebun', color: 'emerald' },
+            { name: 'Kebun', icon: Palmtree, href: '/kebun', color: 'emerald' },
+            { name: 'Data Produksi Kebun', icon:BarChart3 , href: '/produksi', color: 'emerald' },
             { name: 'Legalitas & HGU', icon: FileText, href: '/legalitas', color: 'emerald' },
-            { name: 'Produksi', icon: BarChart3, href: '/produksi', color: 'emerald' },
             { name: 'Sustainability', icon: Database, href: '/sustainability', color: 'emerald' },
-            { name: 'Data & Citra', icon: Database, href: '/citra', color: 'emerald' },
+            { name: 'Data Citra', icon: Database, href: '/citra', color: 'emerald' },
+            { name: 'Users', icon: PersonStanding, href: '/users', color: 'emerald' },
+
         ];
 
         const bottomItems = [

@@ -155,7 +155,7 @@ public function upload(Request $request)
     ]);
 
     $request->validate([
-        'file' => 'required|file|mimes:json,geojson|max:51200', // Max 50MB
+        'file' => 'required|file|max:51200', // Max 50MB
         'name' => 'nullable|string|max:255',
         'description' => 'nullable|string|max:1000',
         'color' => 'nullable|string|regex:/^#[0-9A-Fa-f]{6}$/',
